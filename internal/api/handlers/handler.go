@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Whisper_api/internal/service"
+	service "github.com/Whisper_api/internal/api/services"
 	"github.com/Whisper_api/pkg/model"
 
 	"github.com/gorilla/mux"
