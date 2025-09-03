@@ -1,4 +1,4 @@
-package api
+package handler
 
 import (
 	"context"
@@ -30,46 +30,41 @@ func (h *Handler) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/transcribe", h.Transcribe).Methods("POST")
 }
 
-// TranscriptionRequest defines input payload for transcription (moved to dto or reuse).
-type TranscriptionRequest struct {
-	AudioURL string `json:"audio_url"` // URL of the audio file to transcribe
-}
-
 // Transcribe handles POST /api/transcribe to stream transcription output.
 func (h *Handler) Transcribe(w http.ResponseWriter, r *http.Request) {
-	// Decode request JSON
-	var req TranscriptionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+	// Parse multipart form, limit max upload size (e.g., 50MB)
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		http.Error(w, "Invalid multipart form", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
-	// Set a timeout context for the transcription streaming operation
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Missing file form field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
-	// Set response headers and status for streaming JSON
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	// Get http.Flusher to flush responses as they stream
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
-	// Get transcription streaming channels from service
-	stream, errs := h.WhisperService.TranscribeStream(ctx, req.AudioURL)
+	// Pass the multipart file reader and filename to service which calls whisper client
+	stream, errs := h.WhisperService.TranscribeStream(ctx, file, header.Filename)
 
 	encoder := json.NewEncoder(w)
 
-	// Stream transcription results incrementally
 	for {
 		select {
 		case <-ctx.Done():
-			// Context timeout or client cancel
 			return
 		case err := <-errs:
 			if err != nil {
@@ -78,12 +73,10 @@ func (h *Handler) Transcribe(w http.ResponseWriter, r *http.Request) {
 			}
 		case text, ok := <-stream:
 			if !ok {
-				// Stream closed, send final done response
 				encoder.Encode(model.Transcription{Text: "", Done: true})
 				flusher.Flush()
 				return
 			}
-			// Send partial transcription chunk
 			encoder.Encode(model.Transcription{Text: text, Done: false})
 			flusher.Flush()
 		}

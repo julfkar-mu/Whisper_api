@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -14,7 +15,21 @@ type mockWhisperClient struct {
 	err   error
 }
 
-func (m *mockWhisperClient) StreamTranscription(ctx context.Context, audioURL string) (<-chan string, <-chan error) {
+type mockAudioReader struct {
+	data   []byte
+	offset int
+}
+
+func (r *mockAudioReader) Read(p []byte) (n int, err error) {
+	if r.offset >= len(r.data) {
+		return 0, io.EOF
+	}
+	n = copy(p, r.data[r.offset:])
+	r.offset += n
+	return n, nil
+}
+
+func (m *mockWhisperClient) StreamTranscription(ctx context.Context, audioURL io.Reader, fileName string) (<-chan string, <-chan error) {
 	textCh := make(chan string)
 	errCh := make(chan error, 1)
 
@@ -41,7 +56,8 @@ func TestTranscribeStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	textCh, errCh := service.TranscribeStream(ctx, "dummy-url")
+	mockAudioReader := &mockAudioReader{data: []byte("dummy audio data")}
+	textCh, errCh := service.TranscribeStream(ctx, mockAudioReader, "dummy-url")
 
 	var results []string
 	var err error

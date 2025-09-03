@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"strings"
 
 	"github.com/Whisper_api/internal/client"
@@ -9,9 +10,8 @@ import (
 
 // StreamService handles transcription streaming logic
 type StreamService interface {
-	TranscribeStream(ctx context.Context, audioURL string) (<-chan string, <-chan error)
+	TranscribeStream(ctx context.Context, audioFile io.Reader, fileName string) (<-chan string, <-chan error)
 }
-
 type streamService struct {
 	whisperClient client.WhisperClient
 }
@@ -20,8 +20,8 @@ func NewStreamService(wc client.WhisperClient) StreamService {
 	return &streamService{whisperClient: wc}
 }
 
-func (s *streamService) TranscribeStream(ctx context.Context, audioURL string) (<-chan string, <-chan error) {
-	rawStream, errStream := s.whisperClient.StreamTranscription(ctx, audioURL)
+func (s *streamService) TranscribeStream(ctx context.Context, audioURL io.Reader, fileName string) (<-chan string, <-chan error) {
+	rawStream, errStream := s.whisperClient.StreamTranscription(ctx, audioURL, fileName)
 
 	processedStream := make(chan string)
 	processedErrors := make(chan error, 1)
